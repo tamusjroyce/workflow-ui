@@ -1,0 +1,25 @@
+{
+  "name": "workflow-ui",
+  "version": "0.1.0",
+  "description": "A UI workflow editor widget for many frameworks",
+  "main": "index.js",
+  "scripts": {
+    "start": "start index.html",
+    "test": "mocha"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tamusjroyce/workflow-ui.git"
+  },
+  "keywords": [
+    "javascript",
+    "workflow",
+    "diagram"
+  ],
+  "author": "TamusJRoyce",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/tamusjroyce/workflow-ui/issues"
+  },
+  "homepage": "https://github.com/tamusjroyce/workflow-ui#readme"
+}
