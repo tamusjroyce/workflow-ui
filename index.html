@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
 
-    <title>Quadratic Curve | Fabric.js Demos</title>
+    <title>Quadratic Curve + 2D Wireframe Mesh | Fabric.js Demos</title>
     
     <!-- <link rel="stylesheet" href="./css/master.css">
     <link rel="stylesheet" href="./css/prism.css"> -->
@@ -13,7 +13,6 @@
     <!-- <script src="./lib/prism.js"></script> -->
     <script src="https://unpkg.com/delaunator@4.0.0/delaunator.js"></script>
     <script src="./lib/fabric.js"></script>
-      <!--script src="./node_modules/pathfinding/index.js"></script-->
   </head>
   <body>
       <ul id="header">
@@ -33,7 +32,7 @@
     if (document.location.hostname === 'localhost') {
       var links = document.getElementById('header').getElementsByTagName('a');
       for (var i = 0, len = links.length; i < len; i++) {
-        // very retarted fix but fuck it
+        // very retarted fix but [oh well] it
         links[i].href = links[i].href.replace('fabricjs.com', 'localhost:4000');
       }
     }
@@ -62,19 +61,65 @@
   })();
   </script>
     <div id="bd-wrapper" ng-controller="CanvasControls">
-      <h2><span>Fabric.js demos</span> &middot; Quadratic Curve</h2>
+      <h2><span>Fabric.js demos</span> &middot; Quadratic Curve + 2D Wireframe Mesh</h2>
       <p>by <em>Neil Harris</em></p>
+      <p><b>You might notice how this could be valueble to path finding / object avoidence</b></p>      
+      <p>
+        This demo combined the awesome <a href="https://github.com/mapbox/delaunator">https://github.com/mapbox/delaunator</a>
+        with Neil Harris' awesome Fabric.js!
+      </p>      
+
+      <input type="checkbox" id="showMesh" name="showMesh" checked="true"/>
+      <label for="showMesh">Show mesh?</label>
+
+      <input type="checkbox" id="showTriangleCenter" name="showTriangleCenter" />
+      <label for="showTriangleCenter">Show triangle mesh centers?</label>
+
+      <input type="checkbox" id="includeScreenEdges" name="includeScreenEdges" />
+      <label for="includeScreenEdges">Include screen Edges?</label>
+
+      <input type="checkbox" id="showFoundPath" name="showFoundPath" />
+      <label for="showFoundPath">Show Path Finding?</label>
 
       <canvas id="c" width="500" height="500" style="border:1px solid #ccc"></canvas>
 
   <script id="main">
   (function() {
+    const showMeshCheckbox = document.getElementById("showMesh");
+    const showTriangleCenterCheckbox = document.getElementById("showTriangleCenter");
+    const includeScreenEdgesCheckbox = document.getElementById("includeScreenEdges");
+    const showFoundPathCheckbox = document.getElementById("showFoundPath");
+
+    function showMesh() {
+      return (showMeshCheckbox.checked === true);
+    }
+
+    function showTriangleCenter() {
+      return (showTriangleCenterCheckbox.checked === true);
+    }
+
+    function includeScreenEdges() {
+      return (includeScreenEdgesCheckbox.checked === true);
+    }
+
+    function showFoundPaths() {
+      return (showFoundPathCheckbox.checked === true);
+    }
+    
     var canvas = this.__canvas = new fabric.Canvas('c');
     fabric.Object.prototype.originX = fabric.Object.prototype.originY = 'center';
 
     // ******************************************************************** //
-    function getPoints(canvas) {
-      const points = []; // [[0,0], [0, canvas.height]];
+    function getPoints(canvas, includeScreenEdge = includeScreenEdges(), showTriangleCenters = showTriangleCenter()) {
+      const points = [];
+      if (includeScreenEdge) {
+        points.push([0,0]);
+        points.push([0, canvas.height]);
+      }
+      if (includeScreenEdge && showTriangleCenters) {
+        points.push([0, canvas.height / 2]);
+        points.push([canvas.width / 2, 0]);
+      }
       canvas.forEachObject(function(obj) {
         if (obj.isConnector || !obj.selectable) {
           return; // Don't count the connector points
@@ -85,9 +130,14 @@
         points.push([bounds.left, bounds.top + bounds.height]);
         points.push([bounds.left + bounds.width, bounds.top + bounds.height]);
       });
-      //points.push([canvas.width, 0]);
-      //points.push([canvas.width, canvas.height]);
-
+      if (includeScreenEdge && showTriangleCenters) {
+        points.push([canvas.width, canvas.height / 2]);
+        points.push([canvas.width / 2, canvas.height]);
+      }
+      if (includeScreenEdge) {
+        points.push([canvas.width, 0]);
+        points.push([canvas.width, canvas.height]);
+      }
       return points;
     }
 
@@ -99,43 +149,274 @@
       return [(x1 + x2 + x3) / 3, (y1 + y2 + y3) / 3];
     }
 
-    function getPathPoints(triangles, points) {
+    function getPathPoints(triangles, points, showMeshs = showMesh(), showTriangleCenters = showTriangleCenter()) {
       // Note: triangles points are indexes into the original points! They are not coordinates.
       if (typeof(triangles.triangles) !== 'undefined') {
         triangles = triangles.triangles;
       }
       const pathPoints = [];
+      const foundPoints = {};
       for (var i = 0; i < triangles.length; i += 3) {
         const p0 = triangles[i];
         const p1 = triangles[i + 1];
         const p2 = triangles[i + 2];
-        //if (1 !== 0) {
+        if (showTriangleCenters) {
           const triangleCenter = getTriangleCenter(points[p0][0], points[p0][1],
                                                    points[p1][0], points[p1][1],
                                                    points[p2][0], points[p2][1]);
-          //pathPoints.push(triangleCenter);
-        //} else {
-          pathPoints.push([points[p0][0], points[p0][1]]);
-          pathPoints.push([points[p1][0], points[p1][1]]);
-          pathPoints.push([points[p2][0], points[p2][1]]);
-        //}
+          const pointName = triangleCenter[0] + "-" + triangleCenter[1];
+          if (typeof(foundPoints[pointName]) === 'undefined') {
+            pathPoints.push(triangleCenter);
+          }
+        }
+        if (showMeshs) {
+          const pointName0 = points[p0][0] + "-" + points[p0][1];
+          if (typeof(foundPoints[pointName0]) === 'undefined') {
+            pathPoints.push([points[p0][0], points[p0][1]]);
+          }
+          const pointName1 = points[p1][0] + "-" + points[p1][1];
+          if (typeof(foundPoints[pointName1]) === 'undefined') {
+            pathPoints.push([points[p1][0], points[p1][1]]);
+          }
+          const pointName2 = points[p2][0] + "-" + points[p2][1];
+          if (typeof(foundPoints[pointName2]) === 'undefined') {
+            pathPoints.push([points[p2][0], points[p2][1]]);
+          }
+        }
       }
       return pathPoints;
     }
 
-    function drawPaths(canvas) {
+    function hasCollision(x1, y1, x2, y2, sourceLocationX, sourceLocationY,
+                          destinationX, destinationY) {
+      if (Math.floor(x1) === Math.floor(sourceLocationX) &&
+          Math.floor(y1) === Math.floor(sourceLocationY)) {
+        return false;
+      }
+      if (Math.floor(x2) === Math.floor(destinationX) &&
+          Math.floor(y2) === Math.floor(destinationY)) {
+        return false;
+      }
+      const drawLine = new fabric.Line([x1, y1, x2 - x1, y2 - y1], {});
+      let hasIntersection = false;
+      canvas.forEachObject(function(obj) {
+        if (hasIntersection) {
+          return;
+        }
+        if (drawLine.intersectsWithObject(obj)) {
+          hasIntersection = true;
+        }
+      });
+      return hasIntersection;
+    }
+
+    function getWeightedGraphLines(points, sourceLocationX, sourceLocationY,
+                                   destinationX, destinationY, maxWidth = canvas.width) {
+      const lines = {}; // Hashtable efficiently removes duplicates
+      const collisions = {};
+      for (let index1 = 0; index1 < points.length; index1++) {
+        for (let index2 = 0; index2 < points.length; index2++) {
+          if (index1 === index2) {
+            continue;
+          }
+          const x1 = points[index1][0];
+          const y1 = points[index1][1];
+          const x2 = points[index2][0];
+          const y2 = points[index2][1];
+          const weight = Math.sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1)); // Line length
+          let node;
+          if (x1 * maxWidth + y1 > x2 * maxWidth + y2) {
+            // Reverse points in the line order to increase uneccessary duplicates (removed below)
+            node = {x1: x2, y1: y2, x2: x1, y2: y1, weight,
+                    adjacentIndexes0: {}, adjacentIndexes1: {},
+                    adjacentIndexes2: {}, adjacentIndexes3: {}};
+          } else {
+            node = {x1, y1, x2, y2, weight,
+                    adjacentIndexes0: {}, adjacentIndexes1: {},
+                    adjacentIndexes2: {}, adjacentIndexes3: {}};
+          }
+          const nodeName = (node.x1 + "-" + node.y1 + "_" + node.x2 + "-" + node.y2);
+          if (collisions[nodeName] === true || hasCollision(x1, y1, x2, y2, sourceLocationX, sourceLocationY,
+                                                            destinationX, destinationY)) {
+            collisions[nodeName] = nodeName; // Prune out lines that cross through objects.
+            continue;
+          }
+          node.name = nodeName;
+          lines[nodeName] = node; // If these coordinates exist, will be overwritten (no duplicates)
+        }
+      }
+      for (let line1index in lines) {
+        const line1 = lines[line1index];
+        for (let line2index in lines) {
+          if (line1index === line2index) {
+            continue;
+          }
+          const line2 = lines[line2index];
+          if (line1.x1 === line2.x1 && line1.y1 === line2.y1) {
+            line1.adjacentIndexes0[line2index] = true; // Beginning of this line matches beginning of other line
+          } else if (line1.x1 === line2.x2 && line1.y1 === line2.y2) {
+            line1.adjacentIndexes1[line2index] = true; // Beginning of this line matches ending of the other line
+          }
+          if (line1.x2 === line2.x1 && line1.y2 === line2.y1) {
+            line1.adjacentIndexes2[line2index] = true; // End of this line matches the beginning of the other line
+          } else if (line1.x2 === line2.x2 && line1.y2 === line2.y2) {
+            line1.adjacentIndexes3[line2index] = true; // End of this line matches ending of the other line
+          }
+        }
+      }
+      return lines;
+    }
+
+    // function binaryInsert(value, array) {
+    //   if (array.length === 0) {
+    //     array.push(value);
+    //     return false;
+    //   }
+    //   let start = 0;
+    //   let end = array.length;
+    //   for (let index = 0; index < array.length; index++) {
+    //     let position = Math.floor((start + end) / 2);
+    //     if (value === array[position]) {
+    //       array.splice(posision, 0, value);
+    //       return true;
+    //     } else if (start === end || position === 0 || position === array.length) {
+    //       array.splice(posision, 0, value);
+    //       return false;
+    //     } else if (value < array[position]) {
+    //       end = position;
+    //     } else {
+    //       start = position;
+    //     }
+    //   }
+    //   array.shift(value);
+    // }    
+
+    // function binaryInsertLookup(value, array, lookup) {
+    //   if (array.length === 0) {
+    //     array.push(value);
+    //     return false;
+    //   }
+    //   let start = 0;
+    //   let end = array.length;
+    //   for (let index = 0; index < array.length; index++) {
+    //     let position = Math.floor((start + end) / 2);
+    //     if (value[lookup] === array[position][lookup]) {
+    //       array.splice(posision, 0, value);
+    //       return true;
+    //     } else if (start === end || position === 0 || position === array.length) {
+    //       array.splice(posision, 0, value);
+    //       return false;
+    //     } else if (value[lookup] < array[position][lookup]) {
+    //       end = position;
+    //     } else {
+    //       start = position;
+    //     }
+    //   }
+    //   array.shift(value);
+    // } 
+    
+    function appendGuessEstimationWeights(lines, sourceLocationX, sourceLocationY,
+                                          destinationX, destinationY, maxWidth = canvas.width) {
+        if (sourceLocationX * maxWidth + sourceLocationY > destinationX * maxWidth + destinationY) {
+          const x = destinationX;
+          const y = destinationY;
+          destinationX = sourceLocationX;
+          destinationY = sourceLocationY;
+          sourceLocationX = x;
+          sourceLocationY = y;
+        }
+        const sortedByGuess = [];
+        const startingLines = [];
+        for(let lineIndex in lines) {
+          const line = lines[lineIndex];
+          // How well the line fits between sourceLocation and destination
+          let guestimation = Math.sqrt((line.x1 - sourceLocationX) * (line.x1 - sourceLocationX) +
+                                       (line.y1 - sourceLocationY) * (line.y1 - sourceLocationY));
+          guestimation = guestimation + Math.sqrt((line.x2 - destinationX) * (line.x2 - destinationX) +
+                                                  (line.y2 - destinationY) * (line.y2 - destinationY));
+          line.guestimation = guestimation;
+          line.fOfN = guestimation + line.weight;
+          if (Math.floor(sourceLocationX) === Math.floor(line.x1) && Math.floor(sourceLocationY) === Math.floor(line.y1)) {
+            startingLines.push(line);
+          }
+        }
+        return startingLines;
+    }
+
+    function getLines(allLines, indexes) {
+      const lines = [];
+      if (Array.isArray(allLines)) {
+        for (let index of indexes) {
+          for (let line of allLines) {
+            if (line.name === index) {
+              lines.push(line);
+              break;
+            }
+          }
+        }
+      } else {
+        for (let index in indexes) {
+          lines.push(allLines[index]);
+        }
+      }
+      return lines;
+    }
+
+    function breathFirstSearch(allLines, startingLines, destinationX, destinationY, foundPath, traversedLines = {}) {
+      const lines = (Array.isArray(startingLines) ? startingLines : Object.values(startingLines)).sort(function(left, right) { return left.fOfN - right.fOfN; });
+      foundPath.push({});
+      for (let line of lines) {
+        if (traversedLines[line.name]) {
+          continue;
+        }
+        traversedLines[line.name] = true;
+        foundPath[foundPath.length - 1] = line;
+        if ((Math.floor(line.x2) === Math.floor(destinationX) && Math.floor(line.y2) === Math.floor(destinationY)) ||
+            (Math.floor(line.x1) === Math.floor(destinationX) && Math.floor(line.y1) === Math.floor(destinationY))) {
+          return true;
+        }
+        if (breathFirstSearch(allLines, getLines(allLines, line.adjacentIndexes0), destinationX, destinationY, foundPath, traversedLines) ||
+            breathFirstSearch(allLines, getLines(allLines, line.adjacentIndexes1), destinationX, destinationY, foundPath, traversedLines) ||
+            breathFirstSearch(allLines, getLines(allLines, line.adjacentIndexes2), destinationX, destinationY, foundPath, traversedLines) ||
+            breathFirstSearch(allLines, getLines(allLines, line.adjacentIndexes3), destinationX, destinationY, foundPath, traversedLines)) {
+          return true;
+        }
+      }
+      foundPath.pop();
+      return false;
+    }
+
+    function getSearchPath(points, sourceLocationX, sourceLocationY,
+                           destinationX, destinationY, maxWidth = canvas.width) {
+      const searchPath = [];
+      const weightedLines = getWeightedGraphLines(points, sourceLocationX, sourceLocationY,
+                                                  destinationX, destinationY, maxWidth);
+      const lines = Object.values(weightedLines);
+      if (lines.length === 0) {
+        return;
+      }
+
+      const startingLines = appendGuessEstimationWeights(weightedLines, lines[0].x1, lines[0].y1, lines[lines.length - 1].x2, lines[lines.length - 1].y2, maxWidth);
+            //sourceLocationX, sourceLocationY, destinationX, destinationY, maxWidth);
+      if (!breathFirstSearch(weightedLines, startingLines, destinationX, destinationY, searchPath)) {
+        return [];
+      }
+      return searchPath;
+    }
+
+    function drawPaths(canvas, showFoundPath = showFoundPaths()) {
       if (typeof(canvas) === 'undefined') {
         return;
       }
       const points = getPoints(canvas);
       const triangles = getDelaunayTriangles(points);
       const pathPoints = getPathPoints(triangles, points);
+      const context = canvas.contextContainer;
       for (let pathIndex = 0; pathIndex < pathPoints.length; pathIndex++) {
         for (let pathIndex2 = 0; pathIndex2 < pathPoints.length; pathIndex2++) {
           if (pathIndex === pathIndex2) {
             continue;
           }
-          const context = canvas.contextContainer;
           context.beginPath();
           context.strokeStyle = "#FF0000";          
           context.moveTo(pathPoints[pathIndex][0], pathPoints[pathIndex][1]);
@@ -148,13 +429,41 @@
           return; // Don't count the connector points
         }
         const bounds = obj.getBoundingRect();
+        canvas.contextContainer.strokeStyle = "#000000";
         canvas.contextContainer.strokeRect(
           bounds.left + 0.5,
           bounds.top + 0.5,
           bounds.width,
           bounds.height
         );
-      });      
+      });
+      if (showFoundPath) {
+        let p0obj;
+        let p2obj;
+        canvas.forEachObject(function(obj) {
+          if (obj.name === "p0") {
+            p0obj = obj;
+          } else if (obj.name === "p2") {
+            p2obj = obj;
+          }
+        });          
+        try {
+          const sourceX = p0obj.getBoundingRect().left;
+          const sourceY = p0obj.getBoundingRect().top;
+          const destinationX = p2obj.getBoundingRect().left;
+          const destinationY = p2obj.getBoundingRect().top;
+          const findPath = getSearchPath(pathPoints, sourceX, sourceY, destinationX, destinationY);
+          context.beginPath();
+          context.strokeStyle = "#00FF00";          
+          for (let line in findPath) {
+            context.moveTo(findPath[line].x1, findPath[line].y1);
+            context.lineTo(findPath[line].x2, findPath[line].y2);
+          }
+          context.stroke();
+        } catch(ex) {
+          console.log("Search failed...", ex);
+        }
+      }
     }
     // ******************************************************************** //
 
@@ -164,8 +473,24 @@
       'object:moving': function(e) { onObjectMoving(e); drawPaths(canvas); },
       'before:selection:cleared': onBeforeSelectionCleared,
       'canvas:cleared': function() { drawPaths(canvas); },
-      'after:render': function() { drawPaths(canvas); }
+      'before:render': function() { drawPaths(canvas); }
     });
+    showMeshCheckbox.addEventListener('change', function(e) {
+      drawPaths(canvas);
+      canvas.renderAll();
+    }, false);
+    showTriangleCenterCheckbox.addEventListener('change', function(e) {
+      drawPaths(canvas);
+      canvas.renderAll();
+    }, false);
+    includeScreenEdgesCheckbox.addEventListener('change', function(e) {
+      drawPaths(canvas);
+      canvas.renderAll();
+    }, false);
+    showFoundPathCheckbox.addEventListener('change', function(e) {
+      drawPaths(canvas);
+      canvas.renderAll();
+    }, false);
 
     (function drawQuadratic() {
 
