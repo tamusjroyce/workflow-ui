@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en" ng-app="kitchensink">
+  <head>
+    <meta charset="utf-8">
+
+    <title>Quadratic Curve | Fabric.js Demos</title>
+    
+    <!-- <link rel="stylesheet" href="./css/master.css">
+    <link rel="stylesheet" href="./css/prism.css"> -->
+    <style>
+      pre { margin-left: 15px !important }
+    </style>
+    <!-- <script src="./lib/prism.js"></script> -->
+    <script src="https://unpkg.com/delaunator@4.0.0/delaunator.js"></script>
+    <script src="./lib/fabric.js"></script>
+    <script>
+      function getFile(fileUrl) {
+        const result = (async function() { 
+                           const response = await fetch(fileUrl);
+                           return await response.text();
+                        });
+        try {
+          result = eval("await result()");
+        } catch (ex) {
+          while (!result.isPending) { };
+          result = result.value;
+        }
+        return result;
+      }
+
+      function getScriptPath() {
+        let filePath;
+        try {
+          filePath = document.currentScript.src.split("/");
+        } catch(ex) {
+          filePath = ex.stack.split("file:///")[1].split(" ")[0].split("/");
+        }
+        filePath.pop();
+        return filePath.join("/") + "/";
+      }
+
+      function addScript(src, variable = undefined) {
+        const content = (typeof(variable) !== 'undefined' ? "const " + variable + " = function() { " : "") +
+                        getFile(src) +
+                        (typeof(variable) !== 'undefined' ? "}; " + variable + "();" : "");
+        const script = document.createElement('script');
+        script.setAttribute('src', "data:text/javascript;base64," + btoa(content));
+        document.head.appendChild(script);
+      }
+
+      function require(libraryPath) {
+        const parts = libraryPath.split("/");
+        const module = parts.pop().split(".")[0];
+        if (!libraryPath.endsWith(".js") || libraryPath.endsWith(".ejs")) {
+          libraryPath = libraryPath + ".js";
+        }
+        try {
+          const loadLibraryCommand = "import { default as " + module.split(" ").join("_") + " } from '" + libraryPath + "'";
+          const library = eval(loadLibraryCommand);
+        } catch(ex) {
+          addScript(getScriptPath() + libraryPath);
+        }
+        return { module, library };
+      }
+
+      const global = this;
+      function setGlobalVariable(name, value) {
+        global[name] = value;
+      }
+
+      class moduleHandler {
+        get exports() {
+          if (typeof(_exports) === 'undefined') {
+            this._exports = {};
+          }
+          return this._exports;
+        }
+        set exports(requireLibrary) {
+          if (typeof(_exports) === 'undefined') {
+            this._exports = {};
+          }
+          this._exports[requireLibrary.module] = requireLibrary.library;
+          setGlobalVariable(requireLibrary.module, requireLibrary.library);
+        }
+      }
+
+      const module = new moduleHandler();
+    </script>
+    <script src="./node_modules/pathfinding/index.js"></script>
+  </head>
+  <body>
+    <ul id="header">
+      <li><a href="http://fabricjs.com/">Home</a></li>
+      <li><a href="http://fabricjs.com/demos">Demos</a></li>
+      <li><a href="http://fabricjs.com/articles">Tutorial</a></li>
+      <li><a href="http://fabricjs.com/docs">Docs</a></li>
+      <li><a href="http://fabricjs.com/build">Custom Build</a></li>
+      <li><a href="http://fabricjs.com/help">Support</a></li>
+      <li><a href="http://fabricjs.com/test">Tests/Benchmarks</a></li>
+      <li><a href="http://fabricjs.com/team">Team</a></li>
+    </ul>
+<script async defer src="https://buttons.github.io/buttons.js"></script>
+<script>
+(function() {
+
+  if (document.location.hostname === 'localhost') {
+    var links = document.getElementById('header').getElementsByTagName('a');
+    for (var i = 0, len = links.length; i < len; i++) {
+      // very retarted fix but fuck it
+      links[i].href = links[i].href.replace('fabricjs.com', 'localhost:4000');
+    }
+  }
+  else {
+    !function(d,s,id){var js,fjs=d.getElementsByTagName(s)[0];if(!d.getElementById(id)){js=d.createElement(s);js.id=id;js.src="//platform.twitter.com/widgets.js";fjs.parentNode.insertBefore(js,fjs);}}(document,"script","twitter-wjs");
+  }
+})();
+(function() {
+  fabric.util.addListener(fabric.window, 'load', function() {
+    setTimeout(function() {
+      var ads = document.getElementById('carbonads');
+      var ads2 = document.getElementById('carbonads-container');
+      var style = window.getComputedStyle(ads2);
+      if (!ads || style.display === 'none') {
+        var nag = document.getElementById('nag');
+        if (!nag) {
+          var newDiv = document.createElement('div');
+          newDiv.id = 'gentle-reminder';
+          newDiv.className = 'reminder';
+          newDiv.innerHTML = 'Do you like fabricJS?<br />If you want it continue running and you do not mind tech related ads, please allow this website in your adblocker.<br /><br />❤️ Thank You!';
+          document.body.appendChild(newDiv)
+        }
+      }
+    }, 4000);
+  });
+})();
+</script>
+  <div id="bd-wrapper" ng-controller="CanvasControls">
+    <h2><span>Fabric.js demos</span> &middot; Quadratic Curve</h2>
+    <p>by <em>Neil Harris</em></p>
+
+    <canvas id="c" width="500" height="500" style="border:1px solid #ccc"></canvas>
+
+<script id="main">
+(function() {
+  var canvas = this.__canvas = new fabric.Canvas('c');
+  fabric.Object.prototype.originX = fabric.Object.prototype.originY = 'center';
+
+  // ******************************************************************** //
+  function getPoints(canvas) {
+    const points = [[0,0]];
+    canvas.forEachObject(function(obj) {
+      if (obj.isConnector || !obj.selectable) {
+        return; // Don't count the connector points
+      }
+      const bounds = obj.getBoundingRect();
+      points.push([bounds.x1, bounds.y1]);
+      points.push([bounds.x2, bounds.y1]);
+      points.push([bounds.x1, bounds.y2]);
+      points.push([bounds.x2, bounds.y2]);
+    });
+    points.push([canvas.width, canvas.height]);
+    return points;
+  }
+
+  function getDelaunayTriangles(points) {
+    return Delaunator.from(points);
+  }
+
+  function getPathPoints(triangles) {
+    if (typeof(triangles.triangles) !== 'undefined') {
+      triangles = triangles.triangles;
+    }
+    const pathPoints = [];
+    for (var i = 0; i < triangles.length; i += 3) {
+      const p0 = triangles[i];
+      const p1 = triangles[i + 1];
+      const p2 = triangles[i + 2];
+      const triangleCenter = (p0 + p1 + p2) / 3;
+      pathPoints.push([triangleCenter, triangleCenter]);
+    }        
+    return pathPoints;
+  }
+
+  function drawPaths(e) {
+    const points = getPoints(e.canvas);
+    const triangles = getDelaunayTriangles();
+    const pathPoints = getPathPoints(triangles);
+    for (let pathIndex = 0; pathIndex < pathPoints.length - 1; pathIndex++) {
+      e.canvas.add(new fabric.Line([pathPoints[pathIndex][0],     pathPoints[pathIndex][1],
+                                    pathPoints[pathIndex + 1][0], pathPoints[pathIndex + 1][1]], {
+        fill: 'red',
+        stroke: 'red',
+        strokeWidth: 5,
+        selectable: false,
+        evented: false,
+      }));
+    }
+  }
+  // ******************************************************************** //
+
+  canvas.on({
+    'object:added': drawPaths,
+    'object:selected': onObjectSelected,
+    'object:moving': function(e) { onObjectMoving(e); drawPaths(e); },
+    'before:selection:cleared': onBeforeSelectionCleared
+  });
+
+  (function drawQuadratic() {
+
+    var line = new fabric.Path('M 65 0 Q 100, 100, 200, 0', { fill: '', stroke: 'black', objectCaching: false });
+
+    line.path[0][1] = 100;
+    line.path[0][2] = 100;
+
+    line.path[1][1] = 200;
+    line.path[1][2] = 200;
+
+    line.path[1][3] = 300;
+    line.path[1][4] = 100;
+
+    line.selectable = false;
+    canvas.add(line);
+
+    var p1 = makeCurvePoint(200, 200, null, line, null)
+    p1.name = "p1";
+    canvas.add(p1);
+
+    var p0 = makeCurveCircle(100, 100, line, p1, null);
+    p0.name = "p0";
+    canvas.add(p0);
+
+    var p2 = makeCurveCircle(300, 100, null, p1, line);
+    p2.name = "p2";
+    canvas.add(p2);
+
+  })();
+
+  function makeCurveCircle(left, top, line1, line2, line3) {
+    var c = new fabric.Circle({
+      left: left,
+      top: top,
+      strokeWidth: 5,
+      radius: 12,
+      fill: '#fff',
+      stroke: '#666'
+    });
+
+    c.hasBorders = c.hasControls = false;
+
+    c.line1 = line1;
+    c.line2 = line2;
+    c.line3 = line3;
+
+    return c;
+  }
+
+  function makeCurvePoint(left, top, line1, line2, line3) {
+    var c = new fabric.Circle({
+      left: left,
+      top: top,
+      strokeWidth: 8,
+      radius: 14,
+      fill: '#fff',
+      stroke: '#666'
+    });
+
+    c.hasBorders = c.hasControls = false;
+
+    c.line1 = line1;
+    c.line2 = line2;
+    c.line3 = line3;
+
+    return c;
+  }
+
+  function onObjectSelected(e) {
+    var activeObject = e.target;
+
+    if (activeObject.name == "p0" || activeObject.name == "p2") {
+      activeObject.line2.animate('opacity', '1', {
+        duration: 200,
+        onChange: canvas.renderAll.bind(canvas),
+      });
+      activeObject.line2.selectable = true;
+    }
+  }
+
+  function onBeforeSelectionCleared(e) {
+    var activeObject = e.target;
+    if (activeObject.name == "p0" || activeObject.name == "p2") {
+      activeObject.line2.animate('opacity', '0', {
+        duration: 200,
+        onChange: canvas.renderAll.bind(canvas),
+      });
+      activeObject.line2.selectable = false;
+    }
+    else if (activeObject.name == "p1") {
+      activeObject.animate('opacity', '0', {
+        duration: 200,
+        onChange: canvas.renderAll.bind(canvas),
+      });
+      activeObject.selectable = false;
+    }
+  }
+
+  function onObjectMoving(e) {
+    if (e.target.name == "p0" || e.target.name == "p2") {
+      var p = e.target;
+
+      if (p.line1) {
+        p.line1.path[0][1] = p.left;
+        p.line1.path[0][2] = p.top;
+        p.line1.path
+      }
+      else if (p.line3) {
+        p.line3.path[1][3] = p.left;
+        p.line3.path[1][4] = p.top;
+      }
+    }
+    else if (e.target.name == "p1") {
+      var p = e.target;
+
+      if (p.line2) {
+        p.line2.path[1][1] = p.left;
+        p.line2.path[1][2] = p.top;
+      }
+    }
+    else if (e.target.name == "p0" || e.target.name == "p2") {
+      var p = e.target;
+
+      p.line1 && p.line1.set({ 'x2': p.left, 'y2': p.top });
+      p.line2 && p.line2.set({ 'x1': p.left, 'y1': p.top });
+      p.line3 && p.line3.set({ 'x1': p.left, 'y1': p.top });
+      p.line4 && p.line4.set({ 'x1': p.left, 'y1': p.top });
+    }
+  }
+})();
+</script>
+
+    </div>
+
+    <script>
+      (function(){
+        var mainScriptEl = document.getElementById('main');
+        if (!mainScriptEl) return;
+        var preEl = document.createElement('pre');
+        var codeEl = document.createElement('code');
+        codeEl.innerHTML = mainScriptEl.innerHTML;
+        codeEl.className = 'language-javascript';
+        preEl.appendChild(codeEl);
+        document.getElementById('bd-wrapper').appendChild(preEl);
+      })();
+    </script>
+
+    <script>
+(function() {
+  fabric.util.addListener(fabric.window, 'load', function() {
+    var canvas = this.__canvas || this.canvas,
+        canvases = this.__canvases || this.canvases;
+
+    canvas && canvas.calcOffset && canvas.calcOffset();
+
+    if (canvases && canvases.length) {
+      for (var i = 0, len = canvases.length; i < len; i++) {
+        canvases[i].calcOffset();
+      }
+    }
+  });
+})();
+</script>
+
+
+  </body>
+</html>
