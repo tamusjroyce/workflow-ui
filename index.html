@@ -197,13 +197,13 @@
       //     Math.floor(y2) === Math.floor(destinationY)) {
       //   return false;
       // }
-      const drawLine = new fabric.Line([x1, y1, x2 - x1, y2 - y1], {});
+      const drawLine = new fabric.Line([x1, y1, x2, y2], {});
       let hasIntersection = false;
       canvas.forEachObject(function(obj) {
         if (hasIntersection || obj.name === "p0" || obj.name === "p2") {
           return;
         }
-        if (drawLine.intersectsWithObject(obj)) {
+        if (obj.intersectsWithObject(drawLine)) {
           hasIntersection = true;
         }
       });
@@ -213,7 +213,6 @@
     function getWeightedGraphLines(points, sourceLocationX, sourceLocationY,
                                    destinationX, destinationY, maxWidth = canvas.width) {
       const lines = {}; // Hashtable efficiently removes duplicates
-      const collisions = {};
       for (let index1 = 0; index1 < points.length; index1++) {
         for (let index2 = 0; index2 < points.length; index2++) {
           if (index1 === index2) {
@@ -377,7 +376,7 @@
       if (typeof(node.adjacentIndexes2) !== 'undefined') { // adjacentIndexes2 are all cached adjacent lines
         for (let lineIndex in node.adjacentIndexes2) {
           const line = allLines[lineIndex];
-          if (node.x2 === line.x1 && node.y2 === line.y1 && typeof(traversedLines[line.name]) === 'undefined') {
+          if (node.hasCollision !== true && node.x2 === line.x1 && node.y2 === line.y1 && typeof(traversedLines[line.name]) === 'undefined') {
             searchLines.push(line);
             traversedLines[line.name] = true;
           }
@@ -389,7 +388,7 @@
           const line = allLines[lineIndex];
           if (node.x2 === line.x1 && node.y2 === line.y1) {
             node.adjacentIndexes2[line.name] = true; // Builds the cache for next time
-            if (typeof(traversedLines[line.name]) === 'undefined') {
+            if (node.hasCollision !== true && typeof(traversedLines[line.name]) === 'undefined') {
               searchLines.push(line);
               traversedLines[line.name] = true;
             }
