@@ -81,6 +81,9 @@
       <input type="checkbox" id="showFoundPath" name="showFoundPath" />
       <label for="showFoundPath">Show Path Finding?</label>
 
+      <label for="addGrid">Divide Screen into Grid. How many Points?</label>
+      <input type="textbox" id="addGrid" name="addGrid" value="0"/>
+
       <canvas id="c" width="500" height="500" style="border:1px solid #ccc"></canvas>
 
   <script id="main">
@@ -89,6 +92,7 @@
     const showTriangleCenterCheckbox = document.getElementById("showTriangleCenter");
     const includeScreenEdgesCheckbox = document.getElementById("includeScreenEdges");
     const showFoundPathCheckbox = document.getElementById("showFoundPath");
+    const addGridTextBox = document.getElementById("addGrid");
 
     function showMesh() {
       return (showMeshCheckbox.checked === true);
@@ -105,18 +109,24 @@
     function showFoundPaths() {
       return (showFoundPathCheckbox.checked === true);
     }
-    
+
+    function gridPoints() {
+      if (!isNaN(addGridTextBox.value)) {
+        return parseInt(addGridTextBox.value);
+      } else {
+        return 0;
+      }
+    }
+
     var canvas = this.__canvas = new fabric.Canvas('c');
     fabric.Object.prototype.originX = fabric.Object.prototype.originY = 'center';
 
     // ******************************************************************** //
-    function getPoints(canvas, includeScreenEdge = includeScreenEdges(), showTriangleCenters = showTriangleCenter()) {
+    function getPoints(canvas, includeScreenEdge = includeScreenEdges(), showTriangleCenters = showTriangleCenter(), gridPoint = gridPoints()) {
       const points = [];
       if (includeScreenEdge) {
         points.push([0,0]);
         points.push([0, canvas.height]);
-      }
-      if (includeScreenEdge && showTriangleCenters) {
         points.push([0, canvas.height / 2]);
         points.push([canvas.width / 2, 0]);
       }
@@ -130,13 +140,20 @@
         points.push([bounds.left, bounds.top + bounds.height]);
         points.push([bounds.left + bounds.width, bounds.top + bounds.height]);
       });
-      if (includeScreenEdge && showTriangleCenters) {
+      if (includeScreenEdge) {
         points.push([canvas.width, canvas.height / 2]);
         points.push([canvas.width / 2, canvas.height]);
-      }
-      if (includeScreenEdge) {
         points.push([canvas.width, 0]);
         points.push([canvas.width, canvas.height]);
+      }
+      if (gridPoint > 0) {
+        const blockWidth = (canvas.width / (gridPoint + 1));
+        const blockHeight = (canvas.height / (gridPoint + 1));
+        for (let x = 1; x <= gridPoint; x++) {
+          for (let y = 1; y <= gridPoint; y++) {
+            points.push([blockWidth * x, blockHeight * y]);
+          }
+        }
       }
       return points;
     }
@@ -149,7 +166,73 @@
       return [(x1 + x2 + x3) / 3, (y1 + y2 + y3) / 3];
     }
 
-    function getPathPoints(triangles, points, showMeshs = showMesh(), showTriangleCenters = showTriangleCenter()) {
+    // line intercept math by Paul Bourke http://paulbourke.net/geometry/pointlineplane/
+    // Determine the intersection point of two line segments
+    // Return FALSE if the lines don't intersect
+    function intersect(x1, y1, x2, y2, x3, y3, x4, y4) {
+      // Check if none of the lines are of length 0
+      if ((x1 === x2 && y1 === y2) || (x3 === x4 && y3 === y4)) {
+        return false;
+      }
+      denominator = ((y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1));
+      // Lines are parallel
+      if (denominator === 0) {
+        return false;
+      }
+      let ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denominator;
+      let ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denominator;
+      // is the intersection along the segments
+      if (ua < 0 || ua > 1 || ub < 0 || ub > 1) {
+        return false;
+      }
+      // Return a object with the x and y coordinates of the intersection
+      let x = x1 + ua * (x2 - x1);
+      let y = y1 + ua * (y2 - y1);
+      // TODO: Remove
+      if ((x1 === x && y1 === y) ||
+          (x2 === x && y2 === y) ||
+          (x3 === x && y3 === y) ||
+          (x4 === x && y4 === y)) {
+        return false;
+      }
+      //drawStar(canvas.contextContainer,x,y,3,2,2);
+      return {x, y};
+    }
+
+    function addIntersectionPoints(points, intersectionPoints = []) {
+      const foundIntersectionPoints = {};
+      for (let point1index in points) {
+        const point1 = points[point1index];
+        for (let point2index in points) {
+          if (point1index === point2index) {
+            continue;
+          }
+          const point2 = points[point2index];
+          for (let point3index in points) {
+            if (point3index === point2index || point3index === point1index) {
+              continue;
+            }
+            const point3 = points[point3index];
+            for (let point4index in points) {
+              if (point4index === point3index || point4index === point2index || point4index === point1index) {
+                continue;
+              }
+              const point4 = points[point4index];
+              const result = intersect(point1[0], point1[1], point2[0], point2[1], point3[0], point3[1], point4[0], point4[1]);
+              result.x = Math.floor(result.x);
+              result.y = Math.floor(result.y);
+              if (result !== false && !foundIntersectionPoints[result.x + "-" + result.y]) {
+                intersectionPoints.push([result.x, result.y]);
+                foundIntersectionPoints[result.x + "-" + result.y] = true;
+              }
+            }
+          }
+        }
+      }
+      return intersectionPoints;
+    }
+
+    function getPathPoints(triangles, points, showTriangleCenters = showTriangleCenter()) {
       // Note: triangles points are indexes into the original points! They are not coordinates.
       if (typeof(triangles.triangles) !== 'undefined') {
         triangles = triangles.triangles;
@@ -167,23 +250,29 @@
           const pointName = triangleCenter[0] + "-" + triangleCenter[1];
           if (typeof(foundPoints[pointName]) === 'undefined') {
             pathPoints.push(triangleCenter);
+            foundPoints[pointName] = true;
           }
         }
-        if (showMeshs) {
-          const pointName0 = points[p0][0] + "-" + points[p0][1];
-          if (typeof(foundPoints[pointName0]) === 'undefined') {
-            pathPoints.push([points[p0][0], points[p0][1]]);
-          }
-          const pointName1 = points[p1][0] + "-" + points[p1][1];
-          if (typeof(foundPoints[pointName1]) === 'undefined') {
-            pathPoints.push([points[p1][0], points[p1][1]]);
-          }
-          const pointName2 = points[p2][0] + "-" + points[p2][1];
-          if (typeof(foundPoints[pointName2]) === 'undefined') {
-            pathPoints.push([points[p2][0], points[p2][1]]);
-          }
+        const pointName0 = points[p0][0] + "-" + points[p0][1];
+        if (typeof(foundPoints[pointName0]) === 'undefined') {
+          pathPoints.push([points[p0][0], points[p0][1]]);
+          foundPoints[pointName0] = true;
+        }
+        const pointName1 = points[p1][0] + "-" + points[p1][1];
+        if (typeof(foundPoints[pointName1]) === 'undefined') {
+          pathPoints.push([points[p1][0], points[p1][1]]);
+          foundPoints[pointName1] = true;
+        }
+        const pointName2 = points[p2][0] + "-" + points[p2][1];
+        if (typeof(foundPoints[pointName2]) === 'undefined') {
+          pathPoints.push([points[p2][0], points[p2][1]]);
+          foundPoints[pointName2] = true;
         }
       }
+      const intersectPoints = addIntersectionPoints(pathPoints);
+      //for (let intersectPoint of intersectPoints) {
+      //  pathPoints.push(intersectPoint);
+      //}
       return pathPoints;
     }
 
@@ -200,6 +289,9 @@
       const drawLine = new fabric.Line([x1, y1, x2, y2], {});
       let hasIntersection = false;
       canvas.forEachObject(function(obj) {
+        if (obj.name !== "p1") {
+          return;
+        }
         if (hasIntersection || obj.name === "p0" || obj.name === "p2") {
           return;
         }
@@ -262,54 +354,6 @@
       return lines;
     }
 
-    // function binaryInsert(value, array) {
-    //   if (array.length === 0) {
-    //     array.push(value);
-    //     return false;
-    //   }
-    //   let start = 0;
-    //   let end = array.length;
-    //   for (let index = 0; index < array.length; index++) {
-    //     let position = Math.floor((start + end) / 2);
-    //     if (value === array[position]) {
-    //       array.splice(posision, 0, value);
-    //       return true;
-    //     } else if (start === end || position === 0 || position === array.length) {
-    //       array.splice(posision, 0, value);
-    //       return false;
-    //     } else if (value < array[position]) {
-    //       end = position;
-    //     } else {
-    //       start = position;
-    //     }
-    //   }
-    //   array.shift(value);
-    // }    
-
-    // function binaryInsertLookup(value, array, lookup) {
-    //   if (array.length === 0) {
-    //     array.push(value);
-    //     return false;
-    //   }
-    //   let start = 0;
-    //   let end = array.length;
-    //   for (let index = 0; index < array.length; index++) {
-    //     let position = Math.floor((start + end) / 2);
-    //     if (value[lookup] === array[position][lookup]) {
-    //       array.splice(posision, 0, value);
-    //       return true;
-    //     } else if (start === end || position === 0 || position === array.length) {
-    //       array.splice(posision, 0, value);
-    //       return false;
-    //     } else if (value[lookup] < array[position][lookup]) {
-    //       end = position;
-    //     } else {
-    //       start = position;
-    //     }
-    //   }
-    //   array.shift(value);
-    // } 
-    
     function appendGuessEstimationWeights(lines, sourceLocationX, sourceLocationY,
                                           destinationX, destinationY, maxWidth = canvas.width) {
         if (sourceLocationX * maxWidth + sourceLocationY > destinationX * maxWidth + destinationY) {
@@ -456,7 +500,7 @@
       ctx.lineWidth = 1;
     }
 
-    function drawPaths(canvas, showFoundPath = showFoundPaths()) {
+    function drawPaths(canvas, showMeshs = showMesh(), showFoundPath = showFoundPaths()) {
       if (typeof(canvas) === 'undefined') {
         return;
       }
@@ -489,11 +533,13 @@
           if (weightedLine.hasCollision) {
             continue;
           }
-          context.beginPath();
-          context.strokeStyle = "#FFFF00";          
-          context.moveTo(weightedLine.x1, weightedLine.y1);
-          context.lineTo(weightedLine.x2, weightedLine.y2);
-          context.stroke();
+          if (showMeshs) {
+            context.beginPath();
+            context.strokeStyle = "#FFFF00";          
+            context.moveTo(weightedLine.x1, weightedLine.y1);
+            context.lineTo(weightedLine.x2, weightedLine.y2);
+            context.stroke();
+          }
         }
       } else {
         for (let pathIndex = 0; pathIndex < pathPoints.length; pathIndex++) {
@@ -501,11 +547,13 @@
             if (pathIndex === pathIndex2) {
               continue;
             }
-            context.beginPath();
-            context.strokeStyle = "#FF0000";          
-            context.moveTo(pathPoints[pathIndex][0], pathPoints[pathIndex][1]);
-            context.lineTo(pathPoints[pathIndex2][0], pathPoints[pathIndex2][1]);
-            context.stroke();
+            if (showMeshs) {
+              context.beginPath();
+              context.strokeStyle = "#FF0000";          
+              context.moveTo(pathPoints[pathIndex][0], pathPoints[pathIndex][1]);
+              context.lineTo(pathPoints[pathIndex2][0], pathPoints[pathIndex2][1]);
+              context.stroke();
+            }
           }
         }
       }
@@ -571,6 +619,10 @@
       canvas.renderAll();
     }, false);
     showFoundPathCheckbox.addEventListener('change', function(e) {
+      drawPaths(canvas);
+      canvas.renderAll();
+    }, false);
+    addGridTextBox.addEventListener('change', function(e) {
       drawPaths(canvas);
       canvas.renderAll();
     }, false);
